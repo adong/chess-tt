@@ -101,14 +101,14 @@
   }
   function patioTexture() {
     const [c, g] = makeCanvas(512, 512);
-    g.fillStyle = '#d9cdb6';
+    g.fillStyle = '#c9b48f';
     g.fillRect(0, 0, 512, 512);
     // round paving stones in rings
     for (let ring = 0; ring < 7; ring++) {
       const r0 = 40 + ring * 34, n = 8 + ring * 6;
       for (let k = 0; k < n; k++) {
         const a = (k / n) * Math.PI * 2 + ring * 0.3;
-        g.fillStyle = ['#efe6d4', '#e6dcc6', '#f4ecdc'][(k + ring) % 3];
+        g.fillStyle = ['#e2d2b2', '#d8c6a2', '#e9dbbd'][(k + ring) % 3];
         g.beginPath();
         g.ellipse(256 + Math.cos(a) * r0, 256 + Math.sin(a) * r0, 15 + ring * 0.6, 13, a, 0, Math.PI * 2);
         g.fill();
@@ -724,6 +724,7 @@
     marks.lastA = square('#ffe066', 0.55, 3);
     marks.lastB = square('#ffd400', 0.7, 3);
     marks.check = square('#ff3030', 0.75, 4);
+    marks.checkRing = flat(new T.RingGeometry(0.44, 0.6, 36), new T.MeshBasicMaterial({ color: '#ff2a2a', transparent: true, depthWrite: false }), 6);
     marks.hintFrom = square('#5ef2ff', 0.75, 4);
     marks.hintTo = square('#ffd400', 0.85, 4);
     marks.sel = square('#ffffff', 0.55, 4);
@@ -732,8 +733,9 @@
     marks.checkIcon = sprite('⚠️', 0.62);
     marks.finger = sprite('👇', 0.7);
     marks.danger = sprite('❗', 0.6);
-    const dotMat = new T.MeshBasicMaterial({ color: '#3bff7a', transparent: true, opacity: 0.95, depthWrite: false });
-    const edgeMat = new T.MeshBasicMaterial({ color: '#14121f', transparent: true, opacity: 0.5, depthWrite: false });
+    // the dots show through a piece standing in front of them, so every square you can go to is seen
+    const dotMat = new T.MeshBasicMaterial({ color: '#3bff7a', transparent: true, opacity: 0.95, depthWrite: false, depthTest: false });
+    const edgeMat = new T.MeshBasicMaterial({ color: '#14121f', transparent: true, opacity: 0.5, depthWrite: false, depthTest: false });
     const ringMat = new T.MeshBasicMaterial({ color: '#ff3d3d', transparent: true, opacity: 0.95, depthWrite: false });
     for (let i = 0; i < 28; i++) {
       pool.dots.push({ d: flat(new T.CircleGeometry(0.17, 24), dotMat, 7), e: flat(new T.CircleGeometry(0.22, 24), edgeMat, 6) });
@@ -742,9 +744,10 @@
     for (let i = 0; i < 16; i++) pool.icons.push(sprite('💥', 0.42, 25));
     marks.stars = [];
     for (let i = 0; i < 8; i++) marks.stars.push(sprite('⭐', 0.75, 22));
-    marks.name = new T.Sprite(new T.SpriteMaterial({ depthTest: false, transparent: true }));
+    // the picked-up piece's name: drawn before the dots and icons so it never hides a square it can go to
+    marks.name = new T.Sprite(new T.SpriteMaterial({ depthTest: false, depthWrite: false, transparent: true }));
     marks.name.visible = false;
-    marks.name.renderOrder = 26;
+    marks.name.renderOrder = 5;
     scene.add(marks.name);
   }
 
@@ -916,6 +919,8 @@
     showSq(marks.lastB, fx.lastTo, 0.003);
     showSq(marks.check, fx.check, 0.005);
     if (fx.check >= 0) marks.check.material.opacity = 0.55 + Math.sin(t * 7) * 0.25;
+    showSq(marks.checkRing, fx.check, 0.016);
+    if (fx.check >= 0) marks.checkRing.scale.setScalar(1 + Math.sin(t * 7) * 0.08);
     marks.checkIcon.visible = fx.check >= 0;
     if (fx.check >= 0) {
       cellPos(fx.check, tmp);
@@ -927,8 +932,8 @@
     if (marks.name.visible && fx.sel >= 0) {
       cellPos(fx.sel, tmp);
       const w = marks.name.material.map.image.width, h = marks.name.material.map.image.height;
-      marks.name.scale.set(1.5, (1.5 * h) / w, 1);
-      marks.name.position.set(tmp.x, topOf(fx.sel) + 0.75, tmp.z);
+      marks.name.scale.set(1.25, (1.25 * h) / w, 1);
+      marks.name.position.set(tmp.x, topOf(fx.sel) + 0.6, tmp.z);
     }
     // the hint: the piece glows blue, the square gold with a bouncing finger
     fx.hintT += 1 / 60;

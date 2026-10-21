@@ -752,6 +752,7 @@
     G.flip = false;
     G.g = null;
     setActors();
+    setupCall();
     showScreen('lesson');
     G.state = 'lesson';
     CH.buddy.reset();

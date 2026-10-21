@@ -30,7 +30,7 @@
   ];
 
   let api = null;
-  const L = { i: -1, lesson: null, pos: null, stars: [], got: 0, moves: 0, turnId: 0, foxyT: -1, resetT: -1, over: false, round: 0, mistakes: 0, movable: PAWN };
+  const L = { i: -1, lesson: null, pos: null, stars: [], got: 0, moves: 0, turnId: 0, foxyT: -1, resetT: -1, doneT: -1, doneStars: 0, over: false, round: 0, mistakes: 0, movable: PAWN };
 
   const sq88 = (sq) => CH.to88(sq);
   const colourOfSide = (side) => (side === W ? api.kidColour() : 1 - api.kidColour());
@@ -78,7 +78,7 @@
   function close() {
     L.i = -1;
     L.lesson = null;
-    L.foxyT = L.resetT = -1;
+    L.foxyT = L.resetT = L.doneT = -1;
   }
 
   // the board for this lesson (or this round of it)
@@ -91,7 +91,7 @@
     L.got = 0;
     L.moves = 0;
     L.over = false;
-    L.foxyT = L.resetT = -1;
+    L.foxyT = L.resetT = L.doneT = -1;
     L.turnId++;
     CH.stage.setView(W);
     CH.stage.setPieces(list());
@@ -317,9 +317,8 @@
   function finish(stars) {
     L.over = true;
     L.foxyT = L.resetT = -1;
-    setTimeout(() => {
-      if (L.lesson && api.state === 'lesson') api.done(L.lesson, stars);
-    }, 900);
+    L.doneT = 0.9;
+    L.doneStars = stars;
   }
 
   // ---------------------------------------------------------------- Foxy's moves in the race and the chase
@@ -356,6 +355,11 @@
 
   function update(dt) {
     if (!L.lesson || api.state !== 'lesson') return;
+    if (L.doneT >= 0) {
+      L.doneT -= dt;
+      if (L.doneT < 0) api.done(L.lesson, L.doneStars);
+      return;
+    }
     if (L.foxyT >= 0) {
       L.foxyT -= dt;
       if (L.foxyT < 0) foxyMove();
@@ -403,15 +407,13 @@
       // the queen move that leaves the knight the fewest safe squares (and isn't next to it)
       let best = null, bestN = 99;
       for (const m of mine) {
-        pos.make(m);
-        pos.turn = B;
+        pos.make(m); // now it's the knight's move: how many safe squares has it?
         const escapes = pos.legal().filter((x) => {
           pos.make(x);
           const hit = pos.attacked(CH.mTo(x), W);
           pos.unmake();
           return !hit;
         }).length;
-        pos.turn = W;
         pos.unmake();
         if (escapes < bestN) {
           bestN = escapes;
