@@ -347,7 +347,7 @@
     } else {
       spots.kid = { x: -2.3, z: HW + 1.05 };
       spots.opp = { x: 2.3, z: -(HW + 1.05) };
-      spots.buddy = { x: -3.75, z: HW + 1.55 };
+      spots.buddy = { x: -3.3, z: HW + 1.5 };
       spots.meet = [{ x: -1.75, z: HW + 1.15 }, { x: -2.85, z: HW + 1.15 }];
       bk.position.set(1.95, 0, E);
       bk.rotation.y = 0;

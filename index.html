@@ -59,6 +59,14 @@
     --ink: #14121f;
     --display: 'Bungee', 'Arial Black', Impact, sans-serif;
     --pad: max(12px, env(safe-area-inset-left));
+    /* the kit's ? and language buttons (js/keys.js): the middle of the left edge, but on a tall screen in a game or a
+       lesson the bottom left corner, so the board can use the whole width (as in TT Gomoku) */
+    --kh-top: calc(50% - 20px);
+    --kl-top: calc(50% + 28px);
+    --ks-top: calc(50% + 76px);
+  }
+  @media (max-aspect-ratio: 115/100) {
+    body[data-screen="play"], body[data-screen="lesson"] { --kh-top: calc(100% - 104px - env(safe-area-inset-bottom)); --kl-top: calc(100% - 56px - env(safe-area-inset-bottom)); --ks-top: calc(100% - 152px - env(safe-area-inset-bottom)); }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -130,11 +138,18 @@
     .tile .go { display: none; } /* the whole tile is the button; no room for the ▶ here */
     .seg button { height: 38px; font-size: 12px; border-radius: 15px; padding: 0 8px 0 6px; border-width: 3px; gap: 4px; }
     .opts { gap: 5px; }
-    .duo { font-size: 13px; }
-    .duo img { width: 32px; }
+    .duo { display: none !important; }
+    .logo big { font-size: 30px; }
   }
   @media (max-width: 430px) and (max-aspect-ratio: 115/100) {
-    .seg button { padding: 0 9px 0 6px; gap: 4px; font-size: 13px; }
+    /* a phone held upright: a smaller menu so it all fits under the board (the faces line is left out) */
+    #home { gap: 8px; height: 62vh; }
+    .logo small { font-size: 22px; }
+    .logo big { font-size: 40px; }
+    .tile { width: 128px; border-radius: 26px; }
+    .opts { gap: 8px; }
+    .seg button { padding: 0 9px 0 6px; gap: 4px; font-size: 13px; height: 46px; border-radius: 18px; }
+    .duo { display: none !important; }
   }
 
   /* ---------- HUD ---------- */
@@ -153,6 +168,8 @@
   @keyframes bump { 40% { transform: scale(1.4) rotate(-6deg); } }
   .turn { font-family: var(--display); font-size: clamp(18px, 3.6vmin, 30px); color: #fff; -webkit-text-stroke: 2.5px var(--ink); paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink); white-space: nowrap; transition: opacity 0.2s; }
   .turn.mine { color: var(--yellow); animation: nudge 1.2s ease-in-out infinite; }
+  .hudmid { position: relative; }
+  .hudmid .pill { position: absolute; top: calc(100% + 4px); }
   .pill { font-family: var(--display); font-size: clamp(14px, 2.6vmin, 20px); color: #fff; padding: 2px 12px; border-radius: 999px; background: rgba(232, 55, 44, 0.92); border: 3px solid #fff; animation: nudge 0.9s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: scale(1.08); } }
   @media (max-width: 520px) {
@@ -167,10 +184,25 @@
     .pill { font-size: 13px; }
   }
 
+  /* a phone on its side: two columns so the board gets the whole height. Pause, undo and flip go down the left (above
+     the kit's ? and language buttons); sound, the score and whose turn go down the right (above your brother) */
+  @media (max-height: 430px) and (min-aspect-ratio: 115/100) {
+    #pauseBtn { position: fixed; left: var(--pad); top: 8px; }
+    .hudtop { left: auto; right: max(8px, env(safe-area-inset-right)); top: 8px; width: 112px; flex-direction: column; align-items: flex-end; gap: 6px; }
+    #muteBtn { order: -1; }
+    .hudmid { margin-left: 0; flex-direction: column; align-items: flex-end; flex: none; width: 112px; gap: 4px; }
+    .score { flex-direction: column; align-items: flex-end; gap: 2px; padding: 4px 6px; border-radius: 18px; }
+    .score .dash { display: none; }
+    #sideR { flex-direction: row-reverse; }
+    .turn { white-space: normal; text-align: right; font-size: 13px; line-height: 1.15; -webkit-text-stroke-width: 2px; }
+    .turn.mine { animation: none; }
+    .pill { font-size: 12px; }
+    .hudmid .pill { position: static; }
+  }
   /* undo and flip: bottom left on a tall screen, next to pause on a wide one */
   .tools { position: fixed; z-index: 7; display: flex; gap: 10px; pointer-events: none; }
   .tools > * { pointer-events: auto; }
-  @media (max-aspect-ratio: 115/100) { .tools { left: var(--pad); bottom: max(14px, env(safe-area-inset-bottom)); } }
+  @media (max-aspect-ratio: 115/100) { .tools { left: calc(var(--pad) + 46px); bottom: max(14px, env(safe-area-inset-bottom)); } }
   @media (min-aspect-ratio: 115/100) { .tools { left: calc(var(--pad) + clamp(52px, 8vmin, 72px) + 12px); top: max(10px, env(safe-area-inset-top)); } }
   .tbtn {
     height: clamp(52px, 8vmin, 72px); min-width: clamp(52px, 8vmin, 72px); border-radius: 20px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 4px;
@@ -179,6 +211,7 @@
   .tbtn:disabled { opacity: 0.45; }
   .tbtn.off { display: none; }
   @media (max-height: 430px) { .tbtn, .ibtn { height: 44px; min-width: 44px; width: auto; font-size: 21px; border-radius: 14px; border-width: 3px; } .ibtn { width: 44px; } }
+  @media (max-height: 430px) and (min-aspect-ratio: 115/100) { .tools { left: var(--pad); top: 58px; flex-direction: column; gap: 6px; } .tbtn { height: 42px; } }
 
   /* your brother's button (1 player) / the high five (2 players): bottom right, big */
   .callbtn {

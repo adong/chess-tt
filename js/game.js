@@ -121,6 +121,7 @@
     // the kit's round ? and language buttons sit on the left edge: keep the board and the boys clear of them
     const kitL = 62;
     const m = { l: kitL, r: 12, t: 12, b: 12 };
+    if (!wide && G.state !== 'home') m.l = m.r = 6; // in a game on a tall screen they're down in the bottom left corner
     if (G.state === 'home') {
       if (wide) m.r = W * 0.54 + 10;
       else {
@@ -131,18 +132,23 @@
       const bar = ui.lessonBar.getBoundingClientRect();
       m.t = bar.bottom + 8;
       const call = ui.callBtn.getBoundingClientRect();
-      if (!wide) m.b = Math.max(12, H - call.top + 4);
+      if (!wide) m.b = Math.max(12, H - Math.min(call.top, kitTop()) + 4);
       else m.r = Math.max(12, W - call.left + 4);
+    } else if (wide && H <= 430) {
+      // a phone on its side: the HUD is in two columns (index.html), the board gets the whole height
+      document.documentElement.style.setProperty('--toolsw', '0px');
+      m.t = m.b = 6;
+      m.r = W - Math.min(ui.callBtn.getBoundingClientRect().left, ui.hudtop.getBoundingClientRect().left) + 6;
     } else {
       document.documentElement.style.setProperty('--toolsw', wide ? `${ui.tools.offsetWidth + 10}px` : '0px');
       const top = ui.hudtop.getBoundingClientRect();
       m.t = top.bottom + 6;
       const call = ui.callBtn.getBoundingClientRect();
-      if (!wide) m.b = Math.max(12, H - Math.min(call.top, ui.tools.getBoundingClientRect().top) + 4);
+      if (!wide) m.b = Math.max(12, H - Math.min(call.top, ui.tools.getBoundingClientRect().top, kitTop()) + 4);
       else m.r = Math.max(12, W - call.left + 4);
     }
     // a phone on its side is short: look down more steeply so the squares stay big
-    const elev = wide ? (H < 500 ? 1.2 : 1.0) : 1.12;
+    const elev = wide ? (H < 500 ? 1.2 : 1.0) : 1.2;
     ST.fit(ST.framePoints(G.state !== 'home', SCALE), elev, az, m);
     // the boys face the camera, turned a little toward the board
     const cp = ST.cam.position;
@@ -159,6 +165,12 @@
       place(G.kidC, sp.kid);
       place(1 - G.kidC, sp.opp);
     }
+  }
+
+  // the top of the kit's ? button (bottom left on a tall screen in a game)
+  function kitTop() {
+    const b = document.getElementById('kit-help-btn');
+    return b ? b.getBoundingClientRect().top : ST.H;
   }
 
   // ---------------------------------------------------------------- the game
