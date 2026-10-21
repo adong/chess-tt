@@ -1432,7 +1432,9 @@
     const own = [...document.querySelectorAll('button')].some((b) => isGameBtn(b) && onScreen(b));
     if (btnOpts.button === false || own) { btn.style.display = 'none'; return; }
     if (btnOpts.button) {
-      for (const side of ['top', 'right', 'bottom', 'left']) btn.style[side] = btnOpts.button[side] == null ? '' : btnOpts.button[side];
+      // The same left edge as the ? and language buttons, so a game that only moves it up or down keeps the three in line.
+      const pos = Object.assign(btnOpts.button.right == null ? { left: 'max(10px, env(safe-area-inset-left))' } : {}, btnOpts.button);
+      for (const side of ['top', 'right', 'bottom', 'left']) btn.style[side] = pos[side] == null ? '' : pos[side];
     } else {
       const above = ['kit-lang-btn', 'kit-help-btn'].map((id) => document.getElementById(id))
         .find((b) => b && b.style.display !== 'none' && b.getBoundingClientRect().width > 0);
