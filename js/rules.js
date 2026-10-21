@@ -597,6 +597,9 @@
     this.killers = new Int32Array(128 * 2);
     this.history = new Int32Array(16 * 128);
     this.lists = [];
+    this.frames = [];
+    this.stack = [];
+    this.value = 0;
   }
   const S = Searcher.prototype;
 
@@ -667,11 +670,15 @@
     return alpha;
   };
 
-  S.search = function (depth, alpha, beta, ply) {
+  // The search is a loop over an explicit stack (one frame per ply: its moves and how far it has got), not
+  // recursion, so a job can stop in the middle of a deep search when its slice of the frame is used up and carry on
+  // next frame. (Quiescence search stays recursive: its trees are small.)
+  const PENDING = 0x7fffffff;
+  // Start a node: its score straight away (a leaf, a draw, a hash hit) or PENDING after pushing its frame.
+  S.enter = function (depth, alpha, beta, ply) {
     const pos = this.pos, cfg = this.cfg;
     if (ply > 0 && (pos.half >= 100 || this.repeated())) return 0;
-    if ((++this.nodes & 1023) === 0 && now() > this.deadline) this.abort = true;
-    if (this.abort) return 0;
+    this.nodes++;
     const check = pos.inCheck();
     if (check && cfg.ext && ply < 40) depth++;
     if (depth <= 0) return cfg.qs ? this.qsearch(alpha, beta, ply) : pos.evaluate();
@@ -684,44 +691,99 @@
         if (fl === TT_EXACT || (fl === TT_LOWER && sc >= beta) || (fl === TT_UPPER && sc <= alpha)) return sc;
       }
     }
-    const alpha0 = alpha;
-    const list = this.order(pos.gen(this.listFor(ply)), ply, ttMove);
-    let best = -INF, bestMove = 0, legal = 0;
-    for (let i = 0; i < list.length; i++) {
-      const m = list[i];
-      if (!pos.tryMake(m)) continue;
-      legal++;
-      const score = -this.search(depth - 1, -beta, -alpha, ply + 1);
-      pos.unmake();
-      if (this.abort) return 0;
-      if (score > best) {
-        best = score;
-        bestMove = m;
-        if (score > alpha) {
-          alpha = score;
-          if (alpha >= beta) {
-            if (cfg.order && !((m >> 17) & F_CAP)) {
-              if (this.killers[ply * 2] !== m) {
-                this.killers[ply * 2 + 1] = this.killers[ply * 2];
-                this.killers[ply * 2] = m;
-              }
-              this.history[(pos.b[m & 127] & 15) * 128 + ((m >> 7) & 127)] += depth * depth;
-            }
-            break;
-          }
-        }
+    const f = this.frames[ply] || (this.frames[ply] = {});
+    f.depth = depth;
+    f.alpha = f.alpha0 = alpha;
+    f.beta = beta;
+    f.ply = ply;
+    f.check = check;
+    f.ix = ix;
+    f.list = this.order(pos.gen(this.listFor(ply)), ply, ttMove);
+    f.i = 0;
+    f.best = -INF;
+    f.bestMove = 0;
+    f.legal = 0;
+    f.cur = 0;
+    this.stack.push(f);
+    return PENDING;
+  };
+  // the score of the move frame f just searched: a new best, a new alpha, or a cut-off
+  S.score = function (f, sc) {
+    if (sc <= f.best) return;
+    f.best = sc;
+    f.bestMove = f.cur;
+    if (sc <= f.alpha) return;
+    f.alpha = sc;
+    if (sc < f.beta) return;
+    const m = f.cur, ply = f.ply;
+    if (this.cfg.order && !((m >> 17) & F_CAP)) {
+      if (this.killers[ply * 2] !== m) {
+        this.killers[ply * 2 + 1] = this.killers[ply * 2];
+        this.killers[ply * 2] = m;
       }
+      this.history[(this.pos.b[m & 127] & 15) * 128 + ((m >> 7) & 127)] += f.depth * f.depth;
     }
-    if (!legal) return check ? -MATE + ply : 0;
-    if (cfg.order) {
+    f.i = f.list.length; // cut off: no need to try the rest
+  };
+  // a frame is done: its score (mate or stalemate if it had no legal move), kept in the hash table
+  S.leave = function (f) {
+    if (!f.legal) return f.check ? -MATE + f.ply : 0;
+    if (this.cfg.order) {
+      const pos = this.pos, ix = f.ix;
       tt.k1[ix] = pos.h1;
       tt.k2[ix] = pos.h2;
-      tt.move[ix] = bestMove;
-      tt.score[ix] = best;
-      tt.depth[ix] = depth;
-      tt.flag[ix] = best <= alpha0 ? TT_UPPER : best >= beta ? TT_LOWER : TT_EXACT;
+      tt.move[ix] = f.bestMove;
+      tt.score[ix] = f.best;
+      tt.depth[ix] = f.depth;
+      tt.flag[ix] = f.best <= f.alpha0 ? TT_UPPER : f.best >= f.beta ? TT_LOWER : TT_EXACT;
     }
-    return best;
+    return f.best;
+  };
+  // Search the position from `ply`: true when finished (the score in this.value), false if it needs run().
+  S.begin = function (depth, alpha, beta, ply) {
+    this.stack.length = 0;
+    const v = this.enter(depth, alpha, beta, ply);
+    if (v === PENDING) return false;
+    this.value = v;
+    return true;
+  };
+  // Carry on until the search finishes (true), the time `until` comes (false) or the job's deadline passes
+  // (false, with this.abort set).
+  S.run = function (until) {
+    const pos = this.pos, st = this.stack;
+    let n = 0;
+    while (st.length) {
+      if ((++n & 31) === 0) {
+        const t = now();
+        if (t > this.deadline) {
+          this.abort = true;
+          return false;
+        }
+        if (t > until) return false;
+      }
+      const f = st[st.length - 1];
+      if (f.i >= f.list.length) {
+        const v = this.leave(f);
+        st.pop();
+        if (!st.length) {
+          this.value = v;
+          return true;
+        }
+        pos.unmake();
+        this.score(st[st.length - 1], -v);
+        continue;
+      }
+      const m = f.list[f.i++];
+      if (!pos.tryMake(m)) continue;
+      f.legal++;
+      f.cur = m;
+      const v = this.enter(f.depth - 1, -f.beta, -f.alpha, f.ply + 1);
+      if (v !== PENDING) {
+        pos.unmake();
+        this.score(f, -v);
+      }
+    }
+    return true;
   };
 
   // A search job for the side to move. job.step(ms) works for about that long and returns true when it's done;
@@ -740,9 +802,9 @@
     const root = this.pos.legal();
     if (!root.length) return this.finish(0);
     this.s = new Searcher(this.pos, cfg, this.rng);
-    this.root = root.map((m) => ({ m, score: -INF }));
     this.s.order(root, 0, 0);
     this.root = root.map((m) => ({ m, score: -INF }));
+    this.running = false;
     this.depth = 1;
     this.i = 0;
     this.best = -INF;
@@ -761,32 +823,49 @@
       if (this.cfg.time) this.s.deadline = start + this.cfg.time;
     }
     const cfg = this.cfg, s = this.s, pos = this.pos;
-    while (now() - start < ms || ms <= 0) {
-      const r = this.root[this.i];
-      // the window: exact scores for moves within `margin` of the best so far (to pick among them), bounds otherwise
-      const alpha = this.best === -INF ? -INF : this.best - cfg.margin - 1;
-      pos.make(r.m);
-      const sc = -s.search(this.depth - 1, -INF, -alpha, 1);
+    const until = ms > 0 ? start + ms : Infinity;
+    for (;;) {
+      let finished;
+      if (!this.running) {
+        // the next root move: the window gives exact scores for moves within `margin` of the best so far (to pick
+        // among them), bounds otherwise
+        const alpha = this.best === -INF ? -INF : this.best - cfg.margin - 1;
+        pos.make(this.root[this.i].m);
+        this.running = true;
+        finished = s.begin(this.depth - 1, -INF, -alpha, 1) || s.run(until);
+      } else finished = s.run(until);
+      if (!finished) {
+        if (s.abort) {
+          while (pos.ply > 0) pos.unmake();
+          this.running = false;
+          return this.stop(start);
+        }
+        this.elapsed += now() - start;
+        return false;
+      }
       pos.unmake();
-      if (s.abort) return this.stop(start);
-      r.score = sc;
-      if (sc > this.best) this.best = sc;
+      this.running = false;
+      const r = this.root[this.i];
+      r.score = -s.value;
+      if (r.score > this.best) this.best = r.score;
       this.i++;
-      if (this.i < this.root.length) continue;
-      // a depth is finished: rank the moves (stable, so earlier ones win ties) and go one deeper
-      this.root.sort((a, b) => b.score - a.score);
-      this.last = { depth: this.depth, list: this.root.map((x) => ({ m: x.m, score: x.score })) };
-      const mateFound = Math.abs(this.root[0].score) > MATE - 200;
-      const used = now() - this.t0;
-      const deeper = this.depth < cfg.depth && !mateFound && (!cfg.time || this.depth < (cfg.minDepth || 1) || used < cfg.time * 0.4);
-      if (!deeper) return this.pick(start);
-      this.depth++;
-      this.i = 0;
-      this.best = -INF;
-      if (ms <= 0) continue;
+      if (this.i >= this.root.length) {
+        // a depth is finished: rank the moves (stable, so earlier ones win ties) and go one deeper
+        this.root.sort((a, b) => b.score - a.score);
+        this.last = { depth: this.depth, list: this.root.map((x) => ({ m: x.m, score: x.score })) };
+        const mateFound = Math.abs(this.root[0].score) > MATE - 200;
+        const used = now() - this.t0;
+        const deeper = this.depth < cfg.depth && !mateFound && (!cfg.time || this.depth < (cfg.minDepth || 1) || used < cfg.time * 0.4);
+        if (!deeper) return this.pick(start);
+        this.depth++;
+        this.i = 0;
+        this.best = -INF;
+      }
+      if (now() >= until) {
+        this.elapsed += now() - start;
+        return false;
+      }
     }
-    this.elapsed += now() - start;
-    return false;
   };
   // out of time in the middle of a depth: keep the last full depth, or this one's best if it beat that
   Job.prototype.stop = function (start) {
@@ -822,8 +901,10 @@
   CH.EASY = EASY;
   function easyMove(pos, rng) {
     const us = pos.turn, them = us ^ 1;
-    const moves = pos.legal();
+    let moves = pos.legal();
     if (!moves.length) return 0;
+    // (the sabotage: EASY never sees a queen it could take)
+    if (SAB.easyblind && moves.some((m) => (pos.b[(m >> 7) & 127] & 7) !== QUEEN)) moves = moves.filter((m) => (pos.b[(m >> 7) & 127] & 7) !== QUEEN);
     const pick = (list) => list[Math.floor(rng() * list.length)];
     // a free queen: always (an undefended queen, or one taken by a cheaper piece)
     const queens = moves.filter((m) => {
@@ -834,7 +915,7 @@
       const att = pos.b[m & 127] & 7;
       return att !== QUEEN || !pos.attacked((m >> 7) & 127, them);
     });
-    if (queens.length && !SAB.easyblind) return pick(queens);
+    if (queens.length) return pick(queens);
     // checkmate in one, most of the time
     if (rng() < EASY.mate) {
       const mates = moves.filter((m) => {
